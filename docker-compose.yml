@@ -1,0 +1,31 @@
+services:
+
+  postgres:
+    image: postgres:17
+    container_name: smartstock-flow-postgres
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: smartstock_flow
+      POSTGRES_USER: smartstock
+      POSTGRES_PASSWORD: smartstock_dev_password
+
+    ports:
+      - "5432:5432"
+
+    volumes:
+      - smartstock_postgres_data:/var/lib/postgresql/data
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U smartstock -d smartstock_flow"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+
+  smartstock_postgres_data:
