@@ -1,10 +1,20 @@
+
 import { FormEvent, useEffect, useState } from "react";
 import { apiGet, apiPost } from "./services/api";
+
+type Organization = {
+  id: number;
+  name: string;
+  slug: string;
+  currency: string;
+  timezone: string;
+};
 
 type User = {
   id: number;
   name: string;
   email: string;
+  organization?: Organization | null;
 };
 
 type AuthResponse = {
@@ -17,6 +27,7 @@ type AuthMode = "login" | "register";
 function App() {
   const [mode, setMode] = useState<AuthMode>("login");
   const [name, setName] = useState("");
+  const [organizationName, setOrganizationName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [passwordConfirmation, setPasswordConfirmation] = useState("");
@@ -29,15 +40,9 @@ function App() {
 
   useEffect(() => {
     apiGet<{ user: User }>("/v1/auth/me")
-      .then((response) => {
-        setUser(response.user);
-      })
-      .catch(() => {
-        setUser(null);
-      })
-      .finally(() => {
-        setLoading(false);
-      });
+      .then((response) => setUser(response.user))
+      .catch(() => setUser(null))
+      .finally(() => setLoading(false));
   }, []);
 
   function switchMode(nextMode: AuthMode) {
@@ -64,12 +69,10 @@ function App() {
 
       const body =
         mode === "login"
-          ? {
-              email,
-              password,
-            }
+          ? { email, password }
           : {
               name,
+              organization_name: organizationName.trim(),
               email,
               password,
               password_confirmation: passwordConfirmation,
@@ -77,6 +80,8 @@ function App() {
 
       const response = await apiPost<AuthResponse>(endpoint, body);
       setUser(response.user);
+      setPassword("");
+      setPasswordConfirmation("");
     } catch (err) {
       setError(
         err instanceof Error
@@ -90,14 +95,17 @@ function App() {
 
   async function handleLogout() {
     setSubmitting(true);
+    setError("");
 
     try {
       await apiPost("/v1/auth/logout");
       setUser(null);
       setName("");
+      setOrganizationName("");
       setEmail("");
       setPassword("");
       setPasswordConfirmation("");
+      setMode("login");
     } catch {
       setError("Unable to log out. Please try again.");
     } finally {
@@ -108,17 +116,19 @@ function App() {
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-950">
-        <div className="text-sm text-slate-400">Loading SmartStock Flow...</div>
+        <div className="text-sm text-slate-400">
+          Loading SmartStock Flow...
+        </div>
       </div>
     );
   }
 
   if (user) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950 px-6">
+      <div className="flex min-h-screen items-center justify-center bg-slate-950 px-6 py-12 text-white">
         <div className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-8 shadow-2xl">
           <div className="mb-8">
-            <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-blue-600 text-lg font-bold text-white">
+            <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-blue-600 text-lg font-bold">
               S
             </div>
 
@@ -126,7 +136,7 @@ function App() {
               SmartStock Flow
             </p>
 
-            <h1 className="text-2xl font-semibold text-white">
+            <h1 className="text-2xl font-semibold">
               Welcome back, {user.name}
             </h1>
 
@@ -135,13 +145,31 @@ function App() {
             </p>
           </div>
 
-          <div className="rounded-xl border border-slate-800 bg-slate-950 p-4">
-            <p className="text-xs uppercase tracking-wider text-slate-500">
-              Signed in as
-            </p>
+          <div className="space-y-4 rounded-xl border border-slate-800 bg-slate-950 p-4">
+            <div>
+              <p className="text-xs uppercase tracking-wider text-slate-500">
+                Business
+              </p>
+              <p className="mt-2 text-sm font-medium text-white">
+                {user.organization?.name ?? "No organization assigned"}
+              </p>
+            </div>
 
-            <p className="mt-2 text-sm font-medium text-white">{user.email}</p>
+            <div>
+              <p className="text-xs uppercase tracking-wider text-slate-500">
+                Signed in as
+              </p>
+              <p className="mt-2 break-all text-sm font-medium text-white">
+                {user.email}
+              </p>
+            </div>
           </div>
+
+          {error && (
+            <div className="mt-4 rounded-xl border border-red-900/50 bg-red-950/40 px-4 py-3 text-sm text-red-300">
+              {error}
+            </div>
+          )}
 
           <button
             type="button"
@@ -162,14 +190,11 @@ function App() {
     <div className="min-h-screen bg-slate-950 text-white">
       <div className="grid min-h-screen lg:grid-cols-2">
         <div className="hidden flex-col justify-between bg-blue-600 p-12 lg:flex">
-          <div>
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-lg font-bold text-blue-600">
-                S
-              </div>
-
-              <span className="text-lg font-semibold">SmartStock Flow</span>
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-lg font-bold text-blue-600">
+              S
             </div>
+            <span className="text-lg font-semibold">SmartStock Flow</span>
           </div>
 
           <div className="max-w-lg">
@@ -189,18 +214,15 @@ function App() {
             </p>
           </div>
 
-          <p className="text-sm text-blue-100">
-            Built for modern SMEs.
-          </p>
+          <p className="text-sm text-blue-100">Built for modern SMEs.</p>
         </div>
 
         <div className="flex items-center justify-center px-6 py-12">
           <div className="w-full max-w-md">
             <div className="mb-8 lg:hidden">
-              <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-blue-600 text-lg font-bold text-white">
+              <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-blue-600 text-lg font-bold">
                 S
               </div>
-
               <h1 className="text-2xl font-semibold">SmartStock Flow</h1>
             </div>
 
@@ -212,7 +234,7 @@ function App() {
               <p className="mt-2 text-sm leading-6 text-slate-400">
                 {isLogin
                   ? "Sign in to access your inventory workspace."
-                  : "Start managing your business with SmartStock Flow."}
+                  : "Set up your business workspace in a few steps."}
               </p>
             </div>
 
@@ -244,25 +266,51 @@ function App() {
 
             <form onSubmit={handleSubmit} className="space-y-5">
               {!isLogin && (
-                <div>
-                  <label
-                    htmlFor="name"
-                    className="mb-2 block text-sm font-medium text-slate-300"
-                  >
-                    Full name
-                  </label>
+                <>
+                  <div>
+                    <label
+                      htmlFor="name"
+                      className="mb-2 block text-sm font-medium text-slate-300"
+                    >
+                      Full name
+                    </label>
 
-                  <input
-                    id="name"
-                    type="text"
-                    value={name}
-                    onChange={(event) => setName(event.target.value)}
-                    required
-                    autoComplete="name"
-                    placeholder="Enter your full name"
-                    className="w-full rounded-xl border border-slate-800 bg-slate-900 px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
-                  />
-                </div>
+                    <input
+                      id="name"
+                      type="text"
+                      value={name}
+                      onChange={(event) => setName(event.target.value)}
+                      required
+                      maxLength={255}
+                      autoComplete="name"
+                      placeholder="Enter your full name"
+                      className="w-full rounded-xl border border-slate-800 bg-slate-900 px-4 py-3 text-sm outline-none transition placeholder:text-slate-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="organization-name"
+                      className="mb-2 block text-sm font-medium text-slate-300"
+                    >
+                      Business name
+                    </label>
+
+                    <input
+                      id="organization-name"
+                      type="text"
+                      value={organizationName}
+                      onChange={(event) =>
+                        setOrganizationName(event.target.value)
+                      }
+                      required
+                      maxLength={255}
+                      autoComplete="organization"
+                      placeholder="e.g. PrimeByte Tech"
+                      className="w-full rounded-xl border border-slate-800 bg-slate-900 px-4 py-3 text-sm outline-none transition placeholder:text-slate-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                    />
+                  </div>
+                </>
               )}
 
               <div>
@@ -281,7 +329,7 @@ function App() {
                   required
                   autoComplete="email"
                   placeholder="you@example.com"
-                  className="w-full rounded-xl border border-slate-800 bg-slate-900 px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                  className="w-full rounded-xl border border-slate-800 bg-slate-900 px-4 py-3 text-sm outline-none transition placeholder:text-slate-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
                 />
               </div>
 
@@ -305,7 +353,7 @@ function App() {
                       isLogin ? "current-password" : "new-password"
                     }
                     placeholder="Enter your password"
-                    className="w-full rounded-xl border border-slate-800 bg-slate-900 px-4 py-3 pr-20 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                    className="w-full rounded-xl border border-slate-800 bg-slate-900 px-4 py-3 pr-20 text-sm outline-none transition placeholder:text-slate-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
                   />
 
                   <button
@@ -339,14 +387,12 @@ function App() {
                       minLength={8}
                       autoComplete="new-password"
                       placeholder="Confirm your password"
-                      className="w-full rounded-xl border border-slate-800 bg-slate-900 px-4 py-3 pr-20 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                      className="w-full rounded-xl border border-slate-800 bg-slate-900 px-4 py-3 pr-20 text-sm outline-none transition placeholder:text-slate-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
                     />
 
                     <button
                       type="button"
-                      onClick={() =>
-                        setShowConfirmation(!showConfirmation)
-                      }
+                      onClick={() => setShowConfirmation(!showConfirmation)}
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-slate-500 hover:text-white"
                     >
                       {showConfirmation ? "Hide" : "Show"}
@@ -356,7 +402,10 @@ function App() {
               )}
 
               {error && (
-                <div className="rounded-xl border border-red-900/50 bg-red-950/40 px-4 py-3 text-sm text-red-300">
+                <div
+                  role="alert"
+                  className="rounded-xl border border-red-900/50 bg-red-950/40 px-4 py-3 text-sm text-red-300"
+                >
                   {error}
                 </div>
               )}
@@ -377,8 +426,8 @@ function App() {
             </form>
 
             <p className="mt-8 text-center text-xs leading-5 text-slate-500">
-              By continuing, you agree to use SmartStock Flow responsibly and
-              keep your account credentials secure.
+              Keep your account credentials secure and use SmartStock Flow
+              responsibly.
             </p>
           </div>
         </div>

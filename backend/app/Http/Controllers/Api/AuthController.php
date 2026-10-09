@@ -8,6 +8,8 @@ use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -15,30 +17,44 @@ class AuthController extends Controller
 {
     public function register(Request $request): JsonResponse
     {
+        // Normalize the email BEFORE validating so the unique check is accurate
+        $request->merge([
+            'email' => Str::lower(trim((string) $request->input('email'))),
+        ]);
+
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
+            'organization_name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email'],
             'password' => ['required', 'string', 'min:8', 'confirmed'],
         ]);
 
-        $organizationName = $validated['name'] . "'s Organization";
+        $user = DB::transaction(function () use ($validated) {
+            $organizationName = trim($validated['organization_name']);
 
-        $organization = Organization::create([
-            'name' => $organizationName,
-            'slug' => Str::slug($organizationName) . '-' . Str::lower(Str::random(6)),
-            'currency' => 'KES',
-            'timezone' => 'Africa/Nairobi',
-        ]);
+            // Fallback in case the name produces an empty slug (e.g. non-Latin characters)
+            $baseSlug = Str::slug($organizationName) ?: 'organization';
 
-        $user = User::create([
-            'organization_id' => $organization->id,
-            'name' => $validated['name'],
-            'email' => $validated['email'],
-            'password' => $validated['password'],
-        ]);
+            $organization = Organization::create([
+                'name' => $organizationName,
+                'slug' => $baseSlug . '-' . Str::lower(Str::random(6)),
+                'currency' => 'KES',
+                'timezone' => 'Africa/Nairobi',
+            ]);
 
-        Auth::login($user);
-        $request->session()->regenerate();
+            return User::create([
+                'organization_id' => $organization->id,
+                'name' => trim($validated['name']),
+                'email' => $validated['email'],
+                'password' => Hash::make($validated['password']),
+            ]);
+        });
+
+        Auth::guard('web')->login($user);
+
+        if ($request->hasSession()) {
+            $request->session()->regenerate();
+        }
 
         return response()->json([
             'message' => 'Registration successful.',
@@ -53,20 +69,24 @@ class AuthController extends Controller
             'password' => ['required', 'string'],
         ]);
 
-        if (!Auth::attempt([
-            'email' => $validated['email'],
+        $credentials = [
+            'email' => Str::lower(trim($validated['email'])),
             'password' => $validated['password'],
-        ])) {
+        ];
+
+        if (!Auth::guard('web')->attempt($credentials)) {
             throw ValidationException::withMessages([
                 'email' => ['The provided credentials are incorrect.'],
             ]);
         }
 
-        $request->session()->regenerate();
+        if ($request->hasSession()) {
+            $request->session()->regenerate();
+        }
 
         return response()->json([
             'message' => 'Login successful.',
-            'user' => Auth::user()->load('organization'),
+            'user' => Auth::guard('web')->user()->load('organization'),
         ]);
     }
 
@@ -81,8 +101,10 @@ class AuthController extends Controller
     {
         Auth::guard('web')->logout();
 
-        $request->session()->invalidate();
-        $request->session()->regenerateToken();
+        if ($request->hasSession()) {
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+        }
 
         return response()->json([
             'message' => 'Logout successful.',
